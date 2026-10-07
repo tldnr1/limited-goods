@@ -1,0 +1,16 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+AGENTS.local.md
+
+# Build outputs and editor state
+.gradle/
+**/build/
+**/out/
+node_modules/
+dist/
+.idea/
+*.iml
+*.log
