@@ -5,6 +5,7 @@
 - [목표와 범위](docs/01-project-goals.md): 다루는 문제, 검증 목표, 범위
 - [도메인 스토리](docs/02-domain-story.md): 목표로 하는 구매 흐름
 - [정책과 시나리오](docs/03-policies-scenarios.md): 지켜야 할 규칙과 검증할 시나리오
+- [설계](docs/04-design.md): 구성과 선택 이유
 - [개발 규칙](docs/CONTRIBUTING.md): 브랜치, 커밋, PR, 문서 관리
 - [작업 지침](AGENTS.md): AI 도구와 함께 작업하는 규칙
 
