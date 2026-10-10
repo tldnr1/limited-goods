@@ -1,6 +1,6 @@
 # Limited Goods 작업 지침
 
-이전 실험은 [limited-goods-experiments](https://github.com/tldnr1/limited-goods-experiments)에 보관되어 있다. 실행 코드와 검증 명령은 아직 없다.
+이전 실험은 [limited-goods-experiments](https://github.com/tldnr1/limited-goods-experiments)에 보관되어 있다. 실행과 검증 명령은 README에 있다.
 
 ## 읽을 문서
 

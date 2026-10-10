@@ -9,4 +9,15 @@
 - [개발 규칙](docs/CONTRIBUTING.md): 브랜치, 커밋, PR, 문서 관리
 - [작업 지침](AGENTS.md): AI 도구와 함께 작업하는 규칙
 
+## 실행과 검증
+
+JDK 21과 Docker가 필요합니다. 테스트는 Testcontainers로 PostgreSQL을 띄웁니다.
+
+```bash
+./gradlew build                  # 빌드와 테스트
+docker compose up -d             # 로컬 PostgreSQL
+./gradlew :app:bootRun           # 애플리케이션, http://localhost:8080/actuator/health
+./gradlew :payment-stub:bootRun  # 결제사 대역, 포트 8081
+```
+
 이전 실험은 [limited-goods-experiments](https://github.com/tldnr1/limited-goods-experiments)에 보관되어 있습니다.
