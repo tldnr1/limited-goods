@@ -4,6 +4,7 @@
 !.env.example
 .claude/settings.local.json
 AGENTS.local.md
+.local/
 
 # Build outputs and editor state
 .gradle/
