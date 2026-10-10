@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: limited_goods
+      POSTGRES_USER: limited_goods
+      POSTGRES_PASSWORD: limited_goods
+    ports:
+      - "5432:5432"
