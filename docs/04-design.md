@@ -53,6 +53,7 @@ HTTP 대역은 토스페이먼츠 API의 형태를 따른다: 승인(`POST /v1/p
 
 - **도착 시각**: 앱이 요청을 처음 받는 지점에서 기록한다. Q2의 순서와 역전, T1의 기한 판단에 같은 값을 쓴다. 앱 안에서 기다린 시간(스레드, 커넥션 풀, 잠금)으로 생긴 역전도 역전으로 잰다.
 - **시계**: 앱은 현재 시각을 주입받는다. 테스트에서 시각을 조절하기 위해서다.
+- **기한 경계**: 기한 시각과 같은 시각은 기한이 지난 것으로 본다. 요청은 `도착 시각 < 기한`일 때만 기한 안이고, 만료 처리는 `기한 <= 현재 시각`인 행을 대상으로 한다.
 
 ## 레이어
 
@@ -254,13 +255,13 @@ erDiagram
 
 ## API
 
-구매자는 `X-Buyer-Id` 헤더로 구분한다. 요청을 처리했으면 2xx와 결과 상태를, 규칙에 막혀 처리하지 않았으면 4xx와 오류 본문(`code`, `message`)을 돌려준다.
+구매자는 `X-Buyer-Id` 헤더로 구분한다. 요청을 처리했으면 2xx와 결과 상태를, 규칙에 막혀 처리하지 않았으면 4xx와 오류 본문(`code`, `message`)을 돌려준다. 요청 형식이 잘못되면(`X-Buyer-Id` 없음이나 64자 초과, 빈 품목 목록, 같은 품목 중복, 수량 0 이하, 행사에 없는 품목) 규칙을 검사하기 전에 400 `INVALID_REQUEST`로 거절한다.
 
 | 요청 | 처리함 (2xx) | 규칙에 막힘 (4xx) |
 |---|---|---|
-| `POST /events/{eventId}/purchases`<br>`{items: [{itemId, quantity}]}` | 201 잡아 둠 `{purchaseId, paymentDeadlineAt}`<br>200 진행 중인 구매가 있으면 그 구매 (Q3) | 409 `NOT_STARTED`(Q1), `SOLD_OUT`, `LIMIT_EXCEEDED` |
+| `POST /events/{eventId}/purchases`<br>`{items: [{itemId, quantity}]}` | 201 잡아 둠 `{purchaseId, paymentDeadlineAt}`<br>200 진행 중인 구매가 있으면 그 구매 (Q3) | 400 `INVALID_REQUEST`<br>404 `EVENT_NOT_FOUND`<br>409 `NOT_STARTED`(Q1), `SOLD_OUT`, `LIMIT_EXCEEDED` |
 | `POST /purchases/{purchaseId}/payments`<br>헤더 `Idempotency-Key` | 200 승인(구매 확정)<br>200 거절(다시 결제할 수 있는지와 기한)<br>202 결제 확인 중 (P7) | 400 `IDEMPOTENCY_KEY_REQUIRED`<br>409 `PAYMENT_IN_PROGRESS`(P2), `PAYMENT_DEADLINE_PASSED`(T1), `PURCHASE_CLOSED` |
-| `GET /purchases/{purchaseId}` | 200 구매자에게 보이는 상태 | 404 없거나 다른 구매자의 구매 |
+| `GET /purchases/{purchaseId}` | 200 구매자에게 보이는 상태 | 404 `PURCHASE_NOT_FOUND`: 없거나 다른 구매자의 구매 |
 
 C의 측정 구간은 응답으로 나뉜다. 구매 시도 → 결과는 첫 요청의 응답, 결제 요청 → 첫 응답은 두 번째 요청의 응답, 최종 결과는 세 번째 요청을 확정이나 실패가 나올 때까지 조회한 시점이다.
 
@@ -272,14 +273,14 @@ C의 측정 구간은 응답으로 나뉜다. 구매 시도 → 결과는 첫 �
 
 ### 구매자에게 보이는 상태
 
-| 보이는 상태 | 구매 | 결제 시도 |
-|---|---|---|
-| 결제 대기 | 잡아 둠 | 결과 대기 없음 |
-| 결제 확인 중 | 잡아 둠 | 결과 대기 있음 |
-| 확정 | 확정 | |
-| 실패(기한 만료) | 실패(기한 만료) | |
-| 실패(결제사 오류) | 실패(결제사 오류) | 취소 대기 없음 |
-| 실패, 결제 취소 처리 중 | 실패(결제사 오류) | 취소 대기 있음 (B11) |
+| 보이는 상태 | 응답 값 | 구매 | 결제 시도 |
+|---|---|---|---|
+| 결제 대기 | `PAYMENT_WAITING` | 잡아 둠 | 결과 대기 없음 |
+| 결제 확인 중 | `PAYMENT_CHECKING` | 잡아 둠 | 결과 대기 있음 |
+| 확정 | `CONFIRMED` | 확정 | |
+| 실패(기한 만료) | `FAILED_EXPIRED` | 실패(기한 만료) | |
+| 실패(결제사 오류) | `FAILED_PAYMENT_UNKNOWN` | 실패(결제사 오류) | 취소 대기 없음 |
+| 실패, 결제 취소 처리 중 | `FAILED_CANCELING` | 실패(결제사 오류) | 취소 대기 있음 (B11) |
 
 ## 결제 재확인과 재시도
 
