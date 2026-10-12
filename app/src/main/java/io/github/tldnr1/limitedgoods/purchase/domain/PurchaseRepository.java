@@ -18,6 +18,7 @@ public interface PurchaseRepository extends Repository<Purchase, Long> {
 	/**
 	 * 잡아 둔 구매를 만든다. 같은 구매자의 진행 중 구매가 있으면 오류 없이 아무것도 넣지 않고 빈 값을 돌려준다(Q3, ADR-0005).
 	 * 진행 중 구매를 만드는 다른 트랜잭션이 있으면 그 트랜잭션이 끝날 때까지 기다린다.
+	 * 여기서 넣는 잡아 둔 시각과 기한은 임시 값이고, 수량을 잡은 뒤 {@link #startPaymentWindow}로 정한다.
 	 */
 	@Query(value = """
 			insert into purchase (event_id, buyer_id, status, arrived_at, held_at, payment_deadline_at)
@@ -27,6 +28,15 @@ public interface PurchaseRepository extends Repository<Purchase, Long> {
 			""", nativeQuery = true)
 	Optional<Long> insertHeld(@Param("eventId") long eventId, @Param("buyerId") String buyerId,
 			@Param("arrivedAt") Instant arrivedAt, @Param("heldAt") Instant heldAt,
+			@Param("paymentDeadlineAt") Instant paymentDeadlineAt);
+
+	/**
+	 * 수량을 모두 잡은 시각으로 잡아 둔 시각과 결제 시작 기한을 정한다. 수량 잠금을 기다린 시간이 기한을 줄이지 않게 한다.
+	 */
+	@Modifying
+	@Query(value = "update purchase set held_at = :heldAt, payment_deadline_at = :paymentDeadlineAt where id = :id",
+			nativeQuery = true)
+	void startPaymentWindow(@Param("id") long id, @Param("heldAt") Instant heldAt,
 			@Param("paymentDeadlineAt") Instant paymentDeadlineAt);
 
 	@Modifying

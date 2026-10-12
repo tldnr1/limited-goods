@@ -54,13 +54,15 @@ public class HoldPurchaseService {
 		}
 
 		for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-			// DB(timestamptz)가 마이크로초까지 저장하므로 맞춰 자른다. 응답과 저장된 기한이 같아야 한다.
-			Instant heldAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
-			Instant deadline = heldAt.plus(properties.paymentWindow());
+			Instant now = now();
 			Optional<Long> inserted = purchases.insertHeld(command.eventId(), command.buyerId(), command.arrivedAt(),
-					heldAt, deadline);
+					now, now.plus(properties.paymentWindow()));
 			if (inserted.isPresent()) {
 				holdItems(inserted.get(), command, sale);
+				// 기한은 수량을 모두 잡은 뒤부터 센다. 품목 행 잠금을 기다린 시간만큼 결제할 시간이 줄지 않게 한다.
+				Instant heldAt = now();
+				Instant deadline = heldAt.plus(properties.paymentWindow());
+				purchases.startPaymentWindow(inserted.get(), heldAt, deadline);
 				return new HoldResult(inserted.get(), deadline, true);
 			}
 			// 이미 진행 중인 구매가 있다. 그 사이 만료되거나 확정되어 없으면 삽입부터 다시 한다.
@@ -72,6 +74,11 @@ public class HoldPurchaseService {
 		}
 		throw new IllegalStateException("진행 중 구매를 확인하지 못했습니다: event=%d, buyer=%s"
 			.formatted(command.eventId(), command.buyerId()));
+	}
+
+	/** DB(timestamptz)가 마이크로초까지 저장하므로 맞춰 자른다. 응답과 저장된 기한이 같아야 한다. */
+	private Instant now() {
+		return clock.instant().truncatedTo(ChronoUnit.MICROS);
 	}
 
 	private void holdItems(long purchaseId, HoldCommand command, SaleInfo sale) {

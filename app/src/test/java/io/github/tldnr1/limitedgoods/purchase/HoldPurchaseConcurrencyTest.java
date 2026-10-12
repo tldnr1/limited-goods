@@ -2,12 +2,25 @@ package io.github.tldnr1.limitedgoods.purchase;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.sql.Connection;
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import io.github.tldnr1.limitedgoods.purchase.application.HoldCommand;
+import io.github.tldnr1.limitedgoods.purchase.application.HoldResult;
 import io.github.tldnr1.limitedgoods.purchase.application.PurchaseExpiry;
 import io.github.tldnr1.limitedgoods.support.IntegrationTest;
 
@@ -18,6 +31,9 @@ class HoldPurchaseConcurrencyTest extends IntegrationTest {
 
 	@Autowired
 	PurchaseExpiry expiry;
+
+	@Autowired
+	DataSource dataSource;
 
 	@Test
 	void A1_수량보다_많은_구매자가_동시에_시도하면_판매_수량만큼만_성공한다() throws Exception {
@@ -92,6 +108,47 @@ class HoldPurchaseConcurrencyTest extends IntegrationTest {
 		assertThat(holds).isSubsetOf("CREATED", "SOLD_OUT");
 		assertThat(holds.stream().filter("CREATED"::equals).count() + remaining(itemId)).isEqualTo(5);
 		// 불변식은 공통 검사(@AfterEach)가 확인한다.
+	}
+
+	@Test
+	void 수량_잠금을_기다린_시간만큼_결제_시작_기한이_줄지_않는다() throws Exception {
+		long eventId = createEvent(SALE_STARTS_AT);
+		long itemId = createItem(eventId, 1, 1);
+		Duration waited = Duration.ofSeconds(30);
+		ExecutorService pool = Executors.newSingleThreadExecutor();
+		// 다른 트랜잭션이 품목 행을 잠근 동안 구매 시작이 수량 잡기에서 기다리게 한다.
+		try (Connection locker = dataSource.getConnection()) {
+			locker.setAutoCommit(false);
+			locker.createStatement().execute("select * from item_stock where item_id = " + itemId + " for update");
+
+			Future<HoldResult> held = pool.submit(() -> holdPurchase
+				.hold(new HoldCommand(eventId, "buyer-1", new TreeMap<>(Map.of(itemId, 1)), SALE_STARTS_AT)));
+			awaitLockWaiters(1);
+			clock.advance(waited);
+			locker.rollback();
+
+			Instant expected = SALE_STARTS_AT.plus(waited).plus(Duration.ofMinutes(5));
+			HoldResult result = held.get(10, TimeUnit.SECONDS);
+			assertThat(result.paymentDeadlineAt()).isEqualTo(expected);
+			assertThat(jdbc.queryForObject("select payment_deadline_at from purchase where id = ?", Timestamp.class,
+					result.purchaseId()).toInstant()).isEqualTo(expected);
+		}
+		finally {
+			pool.shutdownNow();
+		}
+	}
+
+	private void awaitLockWaiters(int count) throws InterruptedException {
+		for (int i = 0; i < 100; i++) {
+			Integer waiting = jdbc.queryForObject(
+					"select count(*) from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
+					Integer.class);
+			if (waiting == count) {
+				return;
+			}
+			Thread.sleep(50);
+		}
+		throw new AssertionError("잠금을 기다리는 트랜잭션이 %d개가 되지 않았습니다.".formatted(count));
 	}
 
 	private int purchaseCount(String buyerId) {

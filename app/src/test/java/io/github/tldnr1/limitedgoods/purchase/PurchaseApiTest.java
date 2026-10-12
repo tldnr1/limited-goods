@@ -1,5 +1,6 @@
 package io.github.tldnr1.limitedgoods.purchase;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -81,6 +82,23 @@ class PurchaseApiTest extends IntegrationTest {
 			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 		holdRequest("buyer-1", body(999, 1)).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+	}
+
+	@Test
+	void 소수점_품목_ID와_수량은_정수로_바꾸지_않고_400으로_거절한다() throws Exception {
+		holdRequest("buyer-1", "{\"items\": [{\"itemId\": %d.9, \"quantity\": 1}]}".formatted(itemId))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		holdRequest("buyer-1", "{\"items\": [{\"itemId\": %d, \"quantity\": 1.9}]}".formatted(itemId))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		// 값이 정수와 같아도 소수점 표기는 받지 않는다.
+		holdRequest("buyer-1", "{\"items\": [{\"itemId\": %d, \"quantity\": 1.0}]}".formatted(itemId))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+		assertThat(jdbc.queryForObject("select count(*) from purchase", Integer.class)).isZero();
+		assertThat(remaining(itemId)).isEqualTo(1);
 	}
 
 	@Test
