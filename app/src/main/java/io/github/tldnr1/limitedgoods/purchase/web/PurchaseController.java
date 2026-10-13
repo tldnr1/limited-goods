@@ -47,18 +47,25 @@ class PurchaseController {
 
 	@PostMapping("/events/{eventId}/purchases")
 	ResponseEntity<HoldResponse> hold(@PathVariable long eventId,
-			@RequestHeader(name = BUYER_HEADER, required = false) String buyerId, @RequestBody HoldRequest request,
+			@RequestHeader(name = BUYER_HEADER, required = false) String buyerId,
+			@RequestBody HoldRequest request,
 			@RequestAttribute(ArrivalTimeFilter.ATTRIBUTE) Instant arrivedAt) {
-		HoldResult result = holdPurchase
-			.hold(new HoldCommand(eventId, validBuyerId(buyerId), quantities(request), arrivedAt));
-		return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
-			.body(new HoldResponse(result.purchaseId(), result.paymentDeadlineAt()));
+		String validatedBuyerId = validBuyerId(buyerId);
+		SortedMap<Long, Integer> quantities = quantities(request);
+
+		HoldCommand command = new HoldCommand(eventId, validatedBuyerId, quantities, arrivedAt);
+		HoldResult result = holdPurchase.hold(command);
+
+		HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+		HoldResponse response = new HoldResponse(result.purchaseId(), result.paymentDeadlineAt());
+		return ResponseEntity.status(status).body(response);
 	}
 
 	@GetMapping("/purchases/{purchaseId}")
 	PurchaseView get(@PathVariable long purchaseId,
 			@RequestHeader(name = BUYER_HEADER, required = false) String buyerId) {
-		return purchaseQuery.get(purchaseId, validBuyerId(buyerId));
+		String validatedBuyerId = validBuyerId(buyerId);
+		return purchaseQuery.get(purchaseId, validatedBuyerId);
 	}
 
 	private static String validBuyerId(String buyerId) {
@@ -77,7 +84,8 @@ class PurchaseController {
 			if (line == null || line.itemId() == null || line.quantity() == null || line.quantity() <= 0) {
 				throw ApiException.invalidRequest("품목 ID와 1 이상의 수량이 필요합니다.");
 			}
-			if (quantities.putIfAbsent(line.itemId(), line.quantity()) != null) {
+			Integer alreadyAdded = quantities.putIfAbsent(line.itemId(), line.quantity());
+			if (alreadyAdded != null) {
 				throw ApiException.invalidRequest("같은 품목이 두 번 들어 있습니다.");
 			}
 		}
